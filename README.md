@@ -1,17 +1,67 @@
 # Change Detection Store
 
-A small MCP server that remembers JSON values and tells you when they actually change.
+An MCP server that answers one question well: **"has this JSON changed since I last saw it?"**
 
-The problem it solves: an agent (Claude, a cron script, whatever) checks the same things
-over and over — a product price, a stock level, an API response. Most of the time nothing changed,
-and you don't want to store another copy or compare blobs by hand every run. This store
-does the comparison for you: you patch a value under a key, it hashes the content, and
-writes only when the hash differs from last time. You get back `changed: true` or `false`,
-plus a per-key history of real changes from the last 30 days.
+## Why this exists
 
-It runs on AWS (one Lambda behind a Function URL, one DynamoDB table, Cognito for login)
-and speaks MCP, so you can add it to Claude as a custom connector and let it call the
-tools directly.
+Say you want to track prices for a list of products, catch when an API response quietly
+changes shape, or watch stock levels across a few shops. The shape of the job is always
+the same: fetch the current state, compare it with what you saw last time, act only when
+something actually changed.
+
+The fetching part is easy — a cron job, a script, or an LLM agent with a browsing tool.
+The remembering-and-comparing part is where projects get messy. Today you'd pick one of:
+
+- **A hand-rolled snapshot store.** A table or a bucket of JSON files, plus comparison
+  code you rewrite for every project. Sooner or later it burns you, because the same data
+  serialized twice is rarely byte-identical (key order, `1.0` vs `1`) — so you get
+  "changes" that aren't.
+- **A full monitoring product** like changedetection.io or Visualping. Great when you
+  want their fetcher, scheduler and notifications. Overkill when you already own the
+  fetching side and only miss the memory.
+- **(For agents) pasting the previous value into the prompt** and letting the model do
+  the diffing. Works, but you pay tokens for it on every run and the comparison quality
+  depends on the model's mood.
+
+This project is the missing middle piece: a small service that _only_ remembers and
+compares. Your script or agent sends the current value; the store hashes it canonically,
+writes only when the hash differs from last time, and answers `changed: true/false`.
+History accumulates real changes only, so "what happened to this key over the last
+month" is one call.
+
+To be clear about the scope: **it's a building block, not a monitoring product.** It
+doesn't fetch, doesn't schedule, doesn't notify. It remembers and compares — that's the
+whole job, and it tries to do that one job properly: canonical hashing, concurrency-safe
+writes, a change history that cleans up after itself.
+
+It speaks [MCP](https://modelcontextprotocol.io), so you can add it to Claude as a
+custom connector and let the agent call the tools directly — but anything that can do
+OAuth and JSON-RPC can talk to it.
+
+## What a run looks like
+
+```mermaid
+sequenceDiagram
+    participant A as Your agent / script
+    participant S as Change Detection Store
+    participant D as DynamoDB
+
+    Note over A,S: every run starts the same way
+    A->>S: create_store("prices")
+    S-->>A: { created: false } — already exists, that's fine
+
+    A->>S: patch_items(30 items with fresh values)
+    S->>S: hash each value (RFC 8785 canonical JSON)
+    S->>D: write only what differs
+    S-->>A: 28 × changed:false, 2 × changed:true
+
+    Note over A: act on the 2 real changes
+    A->>S: get_item_history("prices", "product-8471")
+    S-->>A: today's price, last week's price, ...
+```
+
+Twenty-eight of those thirty writes cost nothing — no DynamoDB write, no history entry,
+no noise. That asymmetry is the point: polling is cheap, only change is expensive.
 
 ## How the change detection works
 
@@ -27,6 +77,21 @@ put things like `lastSeenAt` in there, so a timestamp doesn't count as a "change
 
 Deletes are soft: data disappears immediately and DynamoDB TTL removes it physically
 within about 7 days. History entries expire after 30 days on their own.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    C["Claude / your script"] -- "MCP + OAuth 2.0" --> L["Lambda<br/>(Function URL)"]
+    L --> D[("DynamoDB<br/>single table, PK+SK")]
+    L --> G["Cognito<br/>hosted login, group authz"]
+    L --> M["Secrets Manager<br/>client credentials"]
+```
+
+One Lambda serves everything: the MCP endpoint, the OAuth discovery/proxy endpoints and
+the JWT gate. Storage is a single DynamoDB table (partition + sort key, no indexes) with
+on-demand billing — idle cost is close to zero. There's a CloudWatch dashboard
+(`cds-health`) with notes on how to read it, and an SNS topic for alarms.
 
 ## Tools
 
@@ -70,10 +135,8 @@ Access is a Cognito group (`cds-allowed`) — the create-user script puts people
 There's no self-signup, and the app client secret never leaves Secrets Manager.
 
 Cost: close to nothing at low traffic. The KMS key is about a dollar a month; Lambda,
-DynamoDB on-demand and Cognito sit in or near their free tiers. There's a CloudWatch
-dashboard (`cds-health`) with notes on how to read it, and an SNS topic for alarms —
-subscribe your email to the `AlarmTopicArn` stack output if you want to hear about
-problems.
+DynamoDB on-demand and Cognito sit in or near their free tiers. Subscribe your email to
+the `AlarmTopicArn` stack output if you want to hear about problems.
 
 ## Limitations, so you know what you're getting
 
