@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // aws-cdk-lib's types are not exactOptionalPropertyTypes-clean (e.g.
+    // GraphWidget is not assignable to IWidget); the app workspace keeps
+    // the flag on — only CDK code relaxes it.
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["bin/**/*", "lib/**/*", "test/**/*"]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@cds/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Change Detection Store MCP - operational helper scripts",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc",
+    "create-user": "tsx create-user.ts",
+    "connection-info": "tsx connection-info.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.1090.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1090.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# CDK
+cdk.out/
+cdk.context.json
+
+# Tests
+coverage/
+
+# Environment / local
+.env
+.env.*
+
+# Local Claude Code settings (personal)
+.claude/settings.local.json
+
+# Editor
+.vscode/
+.idea/
+.vs/
+
+# OS
+Thumbs.db
+.DS_Store

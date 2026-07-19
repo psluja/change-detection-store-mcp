@@ -1,0 +1,24 @@
+{
+  "name": "@cds/infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Change Detection Store MCP - CDK infrastructure",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.200.0",
+    "constructs": "^10.4.0"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1000.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.20.0",
+    "vitest": "^3.2.0"
+  }
+}
